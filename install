@@ -1,0 +1,936 @@
+#!/bin/bash
+# mac-setup Development Environment Setup
+# https://github.com/monsieurborges/mac-setup
+#
+# Copyright (c) Monsieur Borges
+
+VERSION="1.5.8"
+PREFIX="${HOME}"
+
+# Homebrew
+if [[ "$(/usr/bin/uname -m)" == "arm64" ]]; then
+    # ARM macOS
+    HOMEBREW_PREFIX="/opt/homebrew"
+else
+    # Intel macOS
+    HOMEBREW_PREFIX="/usr/local"
+fi
+
+if [[ -f "${HOMEBREW_PREFIX}/bin/brew" ]]; then
+    eval "$(${HOMEBREW_PREFIX}/bin/brew shellenv)"
+fi
+
+# Colors
+red="\033[91m%b\033[39m"
+green="\033[92m%b\033[39m"
+magenta="\033[95m%b\033[39m"
+
+set -euo pipefail
+
+usage() {
+cat <<EOF
+    Usage: install [OPTIONS]
+
+    OPTION          MEANING
+    --help          Display this help message
+    --version       Display the mac-setup install version
+
+    git             Install and set up Git
+    gitconfig       Set up Git
+    bash            Update and set up Bash as the default shell
+    bashconfig      Improve Bash
+    zsh             Setup Oh My Zsh + Powerlevel10k + Nerd font
+    python310       Install Pyenv and Python 3.10.7
+    pypackages      Install Python packages for data science
+    vscode          Set up VS Code and install extensions
+    opencv          Install OpenCV with Python and Qt support
+EOF
+}
+
+print_version() {
+    printf "mac-setup install ${VERSION}\n"
+}
+
+usage_fatal() {
+    usage
+    printf "${red}" "\nError: "
+    printf "Illegal option!\n"
+}
+
+wait_for_user() {
+    printf "\nPress RETURN to continue or any other key to abort!\n"
+
+    read -rsn 1 key
+    if [[ ${key} != "" ]]; then
+        exit 0
+    fi
+}
+
+wait_for_sudo() {
+    trap "exit 1" SIGINT # Process Interruption Ctrl-C
+
+    # Check if sudo password has been entered
+    # If not, request sudo password
+    if sudo -vn 2>/dev/null; then
+        printf "${magenta}" "\n[sudo] this script is using sudo privileges!\n\n"
+    else
+        printf "\n[sudo] Enter password for ${USER}\n"
+        sudo -v
+    fi
+
+    # Abort if no sudo privileges
+    if ! sudo -vn 2>/dev/null; then
+        printf "${red}" "Aborted: "
+        printf "this script needs sudo privileges!\n"
+        exit 1
+    fi
+}
+
+# Check if Homebrew is installed and update it
+homebrew_update() {
+    if type brew &>/dev/null; then
+        printf "${magenta}" "Updating Homebrew!\n"
+        brew update
+    else
+        BREW_URL='/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+
+        printf "Homebrew is required for the installation.\n\n"
+        printf "Install homebrew using the following command:\n"
+        printf "${BREW_URL}\n"
+        printf "${red}" "\nError: "
+        printf "Homebrew is not installed!\n"
+        exit 1
+    fi
+}
+
+devsetup_git_config() {
+    printf "${magenta}" "\nSet up Git - Ctrl+C to cancel\n"
+
+    printf "git config --global user.name 'Your name': "
+    read -r GIT_USER_NAME
+
+    printf "git config --global user.email 'your@email.com': "
+    read -r GIT_USER_EMAIL
+
+    # Confirm user input
+    printf "${magenta}" "\nUser Name: "
+    printf "${GIT_USER_NAME}\n"
+    printf "${magenta}" "E-mail   : "
+    printf "${GIT_USER_EMAIL}\n"
+
+    wait_for_user
+
+    # Set git user name and email
+    git config --global user.name "${GIT_USER_NAME}"
+    git config --global user.email "${GIT_USER_EMAIL}"
+
+    # Set git terminal colors
+    git config --global color.ui true
+    git config --global color.status.changed "blue normal"
+    git config --global color.status.untracked "red normal"
+    git config --global color.status.added "magenta normal"
+    git config --global color.status.updated "green normal"
+    git config --global color.status.branch "yellow normal bold"
+    git config --global color.status.header "white normal bold"
+
+    printf "${green}" "\nGit setup completed.\n"
+}
+
+devsetup_install_git() {
+    printf "${magenta}" "Install and set up Git!\n"
+
+    homebrew_update
+
+    printf "${magenta}" "Installing Git!\n"
+    brew install git || true
+
+    devsetup_git_config
+
+    printf "${green}" "\nGit installation successful.\n"
+}
+
+###############################################################################
+set +e
+
+# INPUTRC
+read -r -d '' INPUTRC <<EOF
+"\e[A":history-search-backward
+"\e[B":history-search-forward
+
+set colored-stats on
+set mark-symlinked-directories on
+set show-all-if-ambiguous on
+set show-all-if-unmodified on
+set visible-stats on
+set completion-ignore-case on
+TAB: menu-complete
+EOF
+
+# BASH_PROFILE
+read -r -d '' BASH_PROFILE <<"EOF"
+#!/bin/bash
+# Bash Profile for macOS
+# Copyright (c) Monsieur Borges
+# https://github.com/monsieurborges/mac-setup
+
+# LS Colors
+# CLICOLOR use ANSI color sequences to distinguish file types
+export CLICOLOR=true
+export LSCOLORS=gxegbxdxcxahadabafacge
+alias ls='ls -GFh'
+
+# Bash Colors and formatting
+CYAN="\[\e[38;5;6m\]"
+MAGENTA="\[\e[38;5;13m\e[1m\]"
+SKYBLUE="\[\e[38;5;25m\e[1m\]"
+NONE="\[\e[0m\e[21m\]"
+
+# Prevent Mac OS ._ in in tar.gz files
+export COPYFILE_DISABLE=true
+
+# Homebrew
+if [[ "$(/usr/bin/uname -m)" == "arm64" ]]; then
+    # ARM macOS
+    HOMEBREW_PREFIX="/opt/homebrew"
+else
+    # Intel macOS
+    HOMEBREW_PREFIX="/usr/local"
+fi
+
+eval "$(${HOMEBREW_PREFIX}/bin/brew shellenv)"
+
+# Homebrew completion
+if [[ -f "$(brew --prefix)/etc/bash_completion.d/brew" ]]; then
+    source "$(brew --prefix)/etc/bash_completion.d/brew"
+fi
+
+# Bash completion@2
+if [[ -r "$(brew --prefix)/etc/profile.d/bash_completion.sh" ]]; then
+    source "$(brew --prefix)/etc/profile.d/bash_completion.sh"
+fi
+
+# Bash-Git-prompt
+if [[ -f "$(brew --prefix)/etc/bash_completion.d/git-prompt.sh" ]]; then
+    GIT_PS1_SHOWCOLORHINTS=true
+    GIT_PS1_SHOWDIRTYSTATE=true
+    GIT_PS1_SHOWUNTRACKEDFILES=true
+    GIT_PS1_DESCRIBE_STYLE='default'
+    source "$(brew --prefix)/etc/bash_completion.d/git-prompt.sh"
+fi
+
+# Python virtual environment
+# Allow pip only for active virtual environment
+# Use 'gpip' for global environment
+export PIP_REQUIRE_VIRTUALENV=true
+gpip(){
+    PIP_REQUIRE_VIRTUALENV="" pip "${@}"
+}
+gpip3(){
+    PIP_REQUIRE_VIRTUALENV="" pip3 "${@}"
+}
+
+# Pyenv Python version management
+if type pyenv 1>/dev/null 2>&1; then
+    eval "$(pyenv init -)"
+    pyenv virtualenvwrapper
+fi
+
+# PRIMARY PROMPT
+PROMPT_COMMAND='__git_ps1\
+                "\n${MAGENTA}[\d \t] ${SKYBLUE}$(python --version 2>&1)${NONE}\
+                \n\u@\h: ${CYAN}\w${NONE}"\
+                "\n${VIRTUAL_ENV:+($(basename ${VIRTUAL_ENV}))}\\$ "\
+                " (%s)"'
+EOF
+
+set -e
+###############################################################################
+
+devsetup_bash_config() {
+    printf "${magenta}" "Set up and improve Bash\n"
+
+    printf "${magenta}" "Set up the command line history search\n"
+    echo "${INPUTRC}" > "${HOME}/.inputrc"
+
+    printf "${magenta}" "Backup the current .bash_profile file\n"
+    if [[ -f "${HOME}/.bash_profile" ]]; then
+        cp "${HOME}/.bash_profile" "${HOME}/.bash_profile.bkp"
+    fi
+
+    printf "${magenta}" "Update the .bash_profile\n"
+    echo "${BASH_PROFILE}" > "${HOME}/.bash_profile"
+
+    printf "${magenta}" "Install bash-completion\n"
+    brew install bash-completion@2
+
+    printf "${magenta}" "Install docker command-line completion\n"
+    brew install docker-completion docker-machine-completion docker-compose-completion
+
+    printf "${green}" "\nBash setup completed.\n"
+}
+
+devsetup_install_bash() {
+    printf "${magenta}" "Update and set up Bash as the default shell\n"
+
+    wait_for_sudo
+    homebrew_update
+    brew install bash
+
+    if $(grep -Fxq "${HOMEBREW_PREFIX}/bin/bash" /etc/shells); then
+        printf "${magenta}" "The list of shells is already updated!\n"
+    else
+        printf "${magenta}" "Adding the new shell to the list of allowed shells\n"
+        sudo echo "${HOMEBREW_PREFIX}/bin/bash" >> /etc/shells
+    fi
+
+    printf "${magenta}" "Changing to the new shell\n"
+    chsh -s "${HOMEBREW_PREFIX}/bin/bash"
+
+    devsetup_bash_config
+
+    printf "${green}" "\nBash installation successful!\n"
+
+    printf "${magenta}" "\nClose and reopen the Terminal!\n"
+}
+
+###############################################################################
+set +e
+
+# ZSH_PROFILE
+read -r -d '' ZSH_PROFILE <<"EOF"
+# Zsh Profile for macOS
+# Copyright (c) Monsieur Borges
+# https://github.com/monsieurborges/mac-setup
+
+# Homebrew
+if [[ "$(/usr/bin/uname -m)" == "arm64" ]]; then
+    # ARM macOS
+    HOMEBREW_PREFIX="/opt/homebrew"
+else
+    # Intel macOS
+    HOMEBREW_PREFIX="/usr/local"
+fi
+
+eval "$(${HOMEBREW_PREFIX}/bin/brew shellenv)"
+
+# POWERLEVEL 10K THEME SETTINGS
+############################################################
+POWERLEVEL9K_MODE="nerdfont-complete"
+
+# Current directory
+POWERLEVEL9K_DIR_FOREGROUND=254
+POWERLEVEL9K_DIR_BACKGROUND=237
+
+# OS identifier color
+POWERLEVEL9K_OS_ICON_FOREGROUND=232
+POWERLEVEL9K_OS_ICON_BACKGROUND=7
+
+# Time
+POWERLEVEL9K_TIME_FOREGROUND=0
+POWERLEVEL9K_TIME_BACKGROUND=7
+POWERLEVEL9K_TIME_FORMAT="%D{%d/%m %H:%M:%S}"
+
+# Current Python virtual environment
+POWERLEVEL9K_VIRTUALENV_FOREGROUND=0
+POWERLEVEL9K_VIRTUALENV_BACKGROUND=220
+
+# Pyenv
+POWERLEVEL9K_PYENV_FOREGROUND=255
+POWERLEVEL9K_PYENV_BACKGROUND=24
+
+POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
+    os_icon
+    dir
+    vcs
+    newline
+    prompt_char
+)
+POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS=(
+    status
+    command_execution_time
+    background_jobs
+    direnv
+    asdf
+    virtualenv
+    pyenv
+    vim_shell
+    time
+    newline
+)
+
+# OH MY ZSH SETTINGS
+############################################################
+# Path to oh-my-zsh installation
+export ZSH="${HOME}/.oh-my-zsh"
+
+# ZSH Terminal title
+DISABLE_AUTO_TITLE=true
+
+# Set name of the theme to load
+ZSH_THEME="powerlevel10k/powerlevel10k"
+
+# Plugins
+plugins=(
+    git
+    gitfast
+    python
+    pip
+    pipenv
+    virtualenv
+    docker
+    docker-compose
+    kubectl
+    colorize
+    compleat
+    zsh-autosuggestions
+    zsh-syntax-highlighting
+    colored-man-pages
+    command-not-found
+)
+
+# Fix slowness of copy & paste with zsh-syntax-highlighting
+# https://gist.github.com/magicdude4eva/2d4748f8ef3e6bf7b1591964c201c1ab
+zstyle ':bracketed-paste-magic' active-widgets '.self-*'
+
+# Update ZSH settings
+source $ZSH/oh-my-zsh.sh
+
+# User configuration
+############################################################
+
+# Python virtual environment
+# Allow pip only for active virtual environment
+# Use 'gpip' for global environment
+export PIP_REQUIRE_VIRTUALENV=true
+gpip(){
+    PIP_REQUIRE_VIRTUALENV="" pip "${@}"
+}
+
+# Pyenv Python version management
+if type pyenv 1>/dev/null 2>&1; then
+    eval "$(pyenv init --path)"
+    eval "$(pyenv init -)"
+    pyenv virtualenvwrapper
+fi
+
+# Keep compatible with GNU Linux
+export PATH="${HOMEBREW_PREFIX}/opt/coreutils/libexec/gnubin:$PATH"
+export PATH="${HOMEBREW_PREFIX}/opt/findutils/libexec/gnubin:$PATH"
+export PATH="${HOMEBREW_PREFIX}/opt/gnu-tar/libexec/gnubin:$PATH"
+export PATH="${HOMEBREW_PREFIX}/opt/gnu-sed/libexec/gnubin:$PATH"
+EOF
+
+set -e
+###############################################################################
+
+devsetup_install_zsh() {
+    printf "${magenta}" "Set up Oh My Zsh + Powerlevel10k + Nerd font\n"
+
+    homebrew_update
+
+    printf "${magenta}" "Update and select Zsh as the default shell\n"
+    brew install zsh
+
+    printf "${magenta}" "Add the new shell to the list of allowed shells\n"
+    if $(grep -Fxq "${HOMEBREW_PREFIX}/bin/zsh" /etc/shells); then
+        printf "${magenta}" "The list of shells is already updated!\n"
+    else
+        wait_for_sudo
+        echo "${HOMEBREW_PREFIX}/bin/zsh" | sudo tee -a /etc/shells
+    fi
+
+    printf "${magenta}" "Change to the new shell\n"
+    chsh -s "${HOMEBREW_PREFIX}/bin/zsh"
+
+    printf "${magenta}" "Install Oh My Zsh\n"
+    URL="https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
+    sh <(curl -fsSL ${URL}) --unattended
+
+    printf "${magenta}" "Install Nerd Font\n"
+    brew tap homebrew/cask-fonts
+    brew install font-hack-nerd-font
+
+    printf "${magenta}" "Install Powerlevel10k theme\n"
+    URL="https://github.com/romkatv/powerlevel10k.git"
+    DIR="${HOME}/.oh-my-zsh/custom/themes/powerlevel10k"
+    git clone "${URL}" "${DIR}"
+
+    printf "${magenta}" "Install zsh-autosuggestions\n"
+    URL="https://github.com/zsh-users/zsh-autosuggestions"
+    DIR="${HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+    git clone "${URL}" "${DIR}"
+
+    printf "${magenta}" "Install syntax highlighting\n"
+    URL="https://github.com/zsh-users/zsh-syntax-highlighting.git"
+    DIR="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting"
+    git clone "${URL}" "${DIR}"
+
+    #Keep script compatibility with GNU Linux
+    printf "${magenta}" "Install coreutils findutils gnu-tar gnu-sed\n"
+    brew install coreutils findutils gnu-tar gnu-sed
+
+    printf "${magenta}" "Backup the current .zshrc file\n"
+    if [[ -f "${HOME}/.zshrc" ]]; then
+        cp "${HOME}/.zshrc" "${HOME}/.zshrc.bkp"
+    fi
+
+    printf "${magenta}" "Update the .zshrc\n"
+    echo "${ZSH_PROFILE}" > "${HOME}/.zshrc"
+
+    printf "${green}" "\nZsh installation successful!\n"
+
+    printf "${red}" "\nCaveats: "
+    printf "
+        Follow the mac-setup tutorial to set up the Terminal
+        and enable antialias text, bold fonts, ANSI colors, bright colors,
+        and the new Nerd Font.
+
+        https://github.com/monsieurborges/mac-setup/blob/master/docs/terminal-zsh-setup.md
+    "
+
+    printf "${red}" "\nClose and reopen the Terminal!\n"
+}
+
+devsetup_install_python310() {
+    printf "${magenta}" "Install Pyenv and Python 3.10.7\n"
+
+    homebrew_update
+
+    printf "${magenta}" "Install Pyenv\n"
+    brew install pyenv
+    brew install pyenv-virtualenvwrapper
+
+    printf "${magenta}" "Install Python 3.10.7\n"
+    eval "$(pyenv init -)"
+    PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install 3.10.7
+
+    printf "${magenta}" "Set Python 3.10.7 as default\n"
+    pyenv global 3.10.7
+    pyenv virtualenvwrapper
+
+    printf "${green}" "\nPython installation successful!\n"
+}
+
+devsetup_install_pypackages() {
+    printf "${magenta}" "Install Python packages for data science\n"
+
+    homebrew_update
+
+    printf "${magenta}" "Install dependencies\n"
+    brew install Graphviz
+
+    printf "${magenta}" "Create a Python virtual environment\n"
+    set +u
+    eval "$(pyenv init -)"
+    pyenv global 3.10.7
+    pyenv virtualenvwrapper
+    mkvirtualenv py310 || true
+    set -u
+    pip install --upgrade pip
+
+    printf "${magenta}" "Install TensorFlow\n"
+    if [[ "$(/usr/bin/uname -m)" == "arm64" ]]; then
+        # ARM macOS https://developer.apple.com/metal/tensorflow-plugin
+        pip install tensorflow-macos
+        pip install tensorflow-metal
+    else
+        # Intel macOS
+        pip install tensorflow
+    fi
+
+    printf "${magenta}" "Install Keras\n"
+    pip install h5py pydot keras
+
+    printf "${magenta}" "Install Python scientific libraires\n"
+    pip install numpy \
+                pandas \
+                scipy \
+                pillow \
+                scikit-learn \
+                scikit-image \
+                sk-video
+
+    printf "${magenta}" "Install basic libraires\n"
+    pip install autopep8 \
+                Cython \
+                ipykernel \
+                progressbar2 \
+                pydocstyle \
+                pylint \
+                pytest \
+                requests \
+                markdown
+
+    printf "${magenta}" "Install Matplotlib\n"
+    pip install ipympl matplotlib
+
+    # Fix Matplotlib backend
+    mkdir -p "${HOME}/.config/matplotlib"
+    echo "backend : TkAgg" > "${HOME}/.config/matplotlib/matplotlibrc"
+
+    printf "${magenta}" "Install Node\n"
+    brew install node || true
+
+    printf "${magenta}" "Install Jupyter Lab\n"
+
+    pip install jupyterlab jupyterlab_widgets ipywidgets
+
+    pip install tensorboard jupyter-tensorboard jupytext
+
+    jupyter labextension list
+
+    printf "${green}" "\nPython setup completed.\n"
+}
+
+###############################################################################
+set +e
+
+# VSCODE_SETTINGS
+read -r -d '' VSCODE_SETTINGS <<"EOF"
+{
+    "terminal.integrated.fontFamily": "Hack Nerd Font",
+    "terminal.integrated.fontSize": 14,
+
+    "window.zoomLevel": 0,
+
+    "editor.fontSize": 16,
+    "editor.rulers": [80, 120],
+    "editor.renderWhitespace": "all",
+    "editor.renderControlCharacters": true,
+    "editor.wordWrap":"on",
+
+    "[markdown]": {
+        "editor.defaultFormatter": "yzhang.markdown-all-in-one"
+    },
+    "markdown-pdf.highlightStyle": "github.css",
+    "cSpell.language": "en,fr",
+
+    "latex-workshop.view.pdf.viewer": "tab",
+    "latex-workshop.latex.autoBuild.run": "never",
+    "latex-workshop.latex.outDir": "./build/",
+    "latex-workshop.latex.recipes": [
+        {
+            "name": "latexmk",
+            "tools": ["latexmk"]
+        },
+        {
+            "name": "pdflatex -> bibtex -> pdflatex*2",
+            "tools": ["pdflatex","bibtex","pdflatex","pdflatex"]
+        },
+        {
+            "name": "pdflatex -> biber -> pdflatex*2",
+            "tools": ["pdflatex","biber","pdflatex","pdflatex"]
+        },
+        {
+            "name": "pdflatex -> glossaries -> bibtex -> pdflatex*2",
+            "tools": ["pdflatex","makeglossaries","bibtex","pdflatex","pdflatex"]
+        },
+        {
+            "name": "pdflatex -> glossaries -> biber -> pdflatex*2",
+            "tools": ["pdflatex","makeglossaries","biber","pdflatex","pdflatex"]
+        }
+    ],
+
+    "latex-workshop.latex.tools": [
+        {
+            "name": "latexmk",
+            "command": "latexmk",
+            "args": [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+                "-output-directory=build",
+                "-file-line-error",
+                "-pdf",
+                "%DOC%"
+            ]
+        },
+        {
+            "name": "pdflatex",
+            "command": "pdflatex",
+            "args": [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+                "-file-line-error",
+                "-output-directory=build",
+                "%DOC%"
+            ]
+        },
+        {
+            "name": "makeglossaries",
+            "command": "makeglossaries",
+            "args": ["-d","./build","%DOCFILE%"]
+        },
+        {
+            "name": "bibtex",
+            "command": "bibtex",
+            "args": ["./build/%DOCFILE%"]
+        },
+        {
+            "name": "biber",
+            "command": "biber",
+            "args": ["./build/%DOCFILE%"]
+        }
+    ],
+
+    "python.venvPath": "~/.virtualenvs/",
+}
+EOF
+
+set -e
+###############################################################################
+
+devsetup_install_code_extensions() {
+    if ! type code &>/dev/null; then
+        printf "${red}" "Error: "
+        printf "Visual Studio Code is not installed!\n"
+        printf "Install it from https://code.visualstudio.com\n"
+        exit 1
+    fi
+
+    printf "${magenta}" "Installing VS Code extensions\n"
+    # code --list-extensions | xargs -L 1 echo code --install-extension
+    code --install-extension aaron-bond.better-comments
+    code --install-extension bierner.markdown-emoji
+    code --install-extension bierner.markdown-preview-github-styles
+    code --install-extension christian-kohler.path-intellisense
+    code --install-extension DavidAnson.vscode-markdownlint
+    code --install-extension dbaeumer.jshint
+    code --install-extension dbaeumer.vscode-eslint
+    code --install-extension donjayamanne.githistory
+    code --install-extension eamodio.gitlens
+    code --install-extension ecmel.vscode-html-css
+    code --install-extension christian-kohler.npm-intellisense
+    code --install-extension esbenp.prettier-vscode
+    code --install-extension humao.rest-client
+    code --install-extension James-Yu.latex-workshop
+    code --install-extension ms-azuretools.vscode-docker
+    code --install-extension ms-python.python
+    code --install-extension ms-vscode-remote.remote-ssh
+    code --install-extension ms-vscode-remote.remote-ssh-edit
+    code --install-extension ms-vscode.cmake-tools
+    code --install-extension jock.svg
+    code --install-extension ms-vscode.cpptools
+    code --install-extension msjsdiag.vscode-react-native
+    code --install-extension oderwat.indent-rainbow
+    code --install-extension redhat.vscode-yaml
+    code --install-extension mechatroner.rainbow-csv
+    code --install-extension ritwickdey.LiveServer
+    code --install-extension streetsidesoftware.code-spell-checker
+    code --install-extension streetsidesoftware.code-spell-checker-french
+    code --install-extension twxs.cmake
+    code --install-extension VisualStudioExptTeam.vscodeintellicode
+    code --install-extension yzane.markdown-pdf
+    code --install-extension yzhang.markdown-all-in-one
+
+    if type git &>/dev/null; then
+        printf "${magenta}" "Configuring vscode as default git editor\n"
+        git config --global core.editor 'code --wait'
+
+        printf "${magenta}" "Configuring vscode as default git diff tool\n"
+        git config --global diff.tool vscode
+        git config --global difftool.vscode.cmd 'code --wait --diff ${LOCAL} ${REMOTE}'
+    fi
+
+    printf "${magenta}" "Update VS Code settings\n"
+    DIR="${HOME}/Library/Application Support/Code/User/settings.json"
+    echo "${VSCODE_SETTINGS}" > "${DIR}"
+
+    printf "${green}" "\nVS Code configured successful.\n"
+}
+
+devsetup_install_opencv() {
+    if [[ -z "${OPENCV_VERSION+x}" ]]; then
+        printf "${magenta}" "Choose a version using the command below:"
+        printf '
+            export OPENCV_VERSION="3.4.18"
+            export OPENCV_VERSION="4.6.0"
+        '
+        printf "${red}" "\nError: "
+        printf "OpenCV version not defined!\n"
+        exit 1
+    else
+        printf "${magenta}" "Install OpenCV ${OPENCV_VERSION} with Python and Qt support\n"
+        wait_for_user
+    fi
+
+    homebrew_update
+
+    printf "${magenta}" "Installing Opencv dependencies\n"
+    brew install cmake pkg-config ceres-solver gdal eigen glog \
+                 harfbuzz jpeg libpng libtiff openexr tbb \
+                 ffmpeg gstreamer gst-plugins-base gst-plugins-good || true
+
+    printf "${magenta}" "Create a Python virtual environment with NumPy 1.18.1\n"
+    set +u
+    eval "$(pyenv init -)"
+    pyenv global 3.10.7
+    pyenv virtualenvwrapper
+    mkvirtualenv opencv || true
+    set -u
+    pip install --upgrade pip
+    pip install numpy
+
+    printf "${magenta}" "Clone OpenCV project from GitHub\n"
+    git clone https://github.com/opencv/opencv "${HOME}/opencv"
+
+    printf "${magenta}" "Clone OpenCV extra modules from GitHub\n"
+    git clone https://github.com/opencv/opencv_contrib "${HOME}/opencv_contrib"
+
+    printf "${magenta}" "Create a branch from last stable version\n"
+    cd "${HOME}/opencv"
+    git checkout tags/${OPENCV_VERSION} -b ${OPENCV_VERSION}
+
+    printf "${magenta}" "Create a branch from last stable version\n"
+    cd "${HOME}/opencv_contrib"
+    git checkout tags/${OPENCV_VERSION} -b ${OPENCV_VERSION}
+
+    printf "${magenta}" "Create a build directory\n"
+    mkdir "${HOME}/opencv/build"
+
+    printf "${magenta}" "Configure OpenCV\n"
+    # Qt PATH
+    if ls ${HOME}/Qt*/*/clang_64/bin/qmake &>/dev/null; then
+        QT_ON_OFF=ON
+        QT_LIB=$(echo ${HOME}/Qt*/*/clang_64/lib/cmake)
+        QT_QMAKE=$(echo ${HOME}/Qt*/*/clang_64/bin/qmake)
+    else
+        printf "${red}" "Qt installation not found."
+        QT_ON_OFF=OFF
+        QT_LIB=""
+        QT_QMAKE=""
+    fi
+
+    # Python PATH
+    py3_exec=$(which python)
+    py3_config=$(python -c "from distutils.sysconfig import get_config_var as s; print(s('LIBDIR'))")
+    py3_include=$(python -c "import distutils.sysconfig as s; print(s.get_python_inc())")
+    py3_packages=$(python -c "import distutils.sysconfig as s; print(s.get_python_lib())")
+    py3_numpy=$(python -c "import numpy; print(numpy.get_include())")
+
+    cd "${HOME}/opencv/build"
+
+    # Configure OpenCV via CMake
+    cmake -D CMAKE_BUILD_TYPE=RELEASE \
+        -D CMAKE_INSTALL_PREFIX="/usr/local" \
+        -D OPENCV_EXTRA_MODULES_PATH="${HOME}/opencv_contrib/modules" \
+        -D ENABLE_PRECOMPILED_HEADERS=OFF \
+        -D OPENCV_GENERATE_PKGCONFIG=ON \
+        -D WITH_CUDA=OFF \
+        -D WITH_QT="${QT_ON_OFF}" \
+        -D CMAKE_PREFIX_PATH="${QT_LIB}" \
+        -D QT_QMAKE_EXECUTABLE="${QT_QMAKE}" \
+        -D QT5_DIR="${QT_LIB}/Qt5" \
+        -D QT5Core_DIR="${QT_LIB}/Qt5Core" \
+        -D QT5Gui_DIR="${QT_LIB}/Qt5Gui" \
+        -D QT5Test_DIR="${QT_LIB}/Qt5Test" \
+        -D QT5Widgets_DIR="${QT_LIB}/Qt5Widgets" \
+        -D Qt5Concurrent_DIR="${QT_LIB}/Qt5Concurrent" \
+        -D OPENCV_ENABLE_NONFREE=ON \
+        -D WITH_GTK=OFF \
+        -D WITH_OPENGL=ON \
+        -D WITH_OPENVX=ON \
+        -D WITH_OPENCL=ON \
+        -D WITH_TBB=ON \
+        -D WITH_EIGEN=ON \
+        -D WITH_GDAL=ON \
+        -D WITH_FFMPEG=ON \
+        -D BUILD_TIFF=ON \
+        -D BUILD_opencv_python2=OFF \
+        -D BUILD_opencv_python3=ON \
+        -D PYTHON_DEFAULT_EXECUTABLE="${py3_exec}" \
+        -D PYTHON3_EXECUTABLE="${py3_exec}" \
+        -D PYTHON3_INCLUDE_DIR="${py3_include}" \
+        -D PYTHON3_PACKAGES_PATH="${py3_packages}" \
+        -D PYTHON3_LIBRARY="${py3_config}" \
+        -D PYTHON3_NUMPY_INCLUDE_DIRS="${py3_numpy}" \
+        -D INSTALL_PYTHON_EXAMPLES=ON \
+        -D INSTALL_C_EXAMPLES=ON \
+        -D BUILD_EXAMPLES=ON \
+        -D CMAKE_CXX_STANDARD=14 ..
+
+    printf "${magenta}" "\nmake opencv\n"
+    wait_for_user
+    make -j 4
+
+    printf "${magenta}" "\nsudo make install opencv\n"
+    wait_for_sudo
+    sudo make -j 4 install
+
+    printf "${magenta}" "\nTest OpenCV installation with Python\n"
+    python -c "import cv2;  print(cv2.__version__)"
+
+    printf "${red}" "\nCaveats: "
+    printf '
+        Symlink OpenCV to a new virtual environment
+        Copy and past the following commands:
+
+        # Activate the TARGET Python virtual environment
+        workon TARGET_ENV
+
+        # Get the OpenCV library path
+        opencv_lib=$(echo ${HOME}/opencv/build/lib/python3/*.so)
+
+        # Get the site-packages path of the virtual environment
+        site_packages=$(python3 -c "import distutils.sysconfig as s; print(s.get_python_lib())")
+
+        # Create a symbolic link to OpenCV library
+        ln -s ${opencv_lib} ${site_packages}
+    '
+
+    printf "${green}" "\nOpenCV installation successful.\n"
+}
+
+# Parse mac-setup options
+while [[ "${#}" -gt 0 ]]; do
+    case "${1}" in
+        --help)
+            print_version
+            usage
+            exit 0
+            ;;
+        --version)
+            print_version
+            exit 0
+            ;;
+        git)
+            devsetup_install_git
+            exit 0
+            ;;
+        gitconfig)
+            devsetup_git_config
+            exit 0
+            ;;
+        bash)
+            devsetup_install_bash
+            exit 0
+            ;;
+        bashconfig)
+            devsetup_bash_config
+            exit 0
+            ;;
+        zsh)
+            devsetup_install_zsh
+            exit 0
+            ;;
+        python310)
+            devsetup_install_python310
+            exit 0
+            ;;
+        pypackages)
+            devsetup_install_pypackages
+            exit 0
+            ;;
+        vscode)
+            devsetup_install_code_extensions
+            exit 0
+            ;;
+        opencv)
+            devsetup_install_opencv
+            exit 0
+            ;;
+        --|-*|*)
+            usage_fatal "${1}"
+            exit 1
+            ;;
+    esac
+done

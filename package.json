@@ -1,0 +1,17 @@
+{
+    "name": "mac-setup",
+    "description": "A Development Environment Setup guide and command-line tool",
+    "author": {
+        "name": "Monsieur Borges",
+        "url": "https://github.com/monsieurborges"
+    },
+    "license": "MIT",
+    "release": "1.5.8",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/monsieurborges/mac-setup"
+    },
+    "bugs": {
+        "url": "https://github.com/monsieurborges/mac-setup/issues"
+    }
+}
